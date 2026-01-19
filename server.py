@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session, redirect, url_for
 from flask_cors import CORS
 from datetime import datetime
 import logging  # Log qilish uchun
 
 app = Flask(__name__)
+app.secret_key = 'vaf9H9tT2oygWw_8eJ4u5XRY1JFhvlu8FB2T46ScmMOPrSF0pyuZPjDXfpNd_dzW7pR9mD0oUoVIYvII9Zqlfg'  # Session uchun maxfiy kalit (o'zgartiring)
 CORS(app, resources={r"/api/*": {"origins": "*"}})  # Barcha originlarga ruxsat (cheat kod uchun)
 
 # Log sozlamalari (optimal ish uchun)
@@ -12,6 +13,43 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Saqlash (in-memory, real serverda database ishlatish mumkin)
 pages = {}       # client_id → sahifa ma'lumotlari (asosan HTML)
 messages = {}    # client_id → matn (javoblar)
+
+# Login sozlamalari (1-talab bo'yicha)
+ADMIN_LOGIN = "admin"
+ADMIN_PASSWORD = "1978"
+
+# Login tekshirish dekoratori
+def login_required(f):
+    def wrap(*args, **kwargs):
+        if 'logged_in' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    wrap.__name__ = f.__name__
+    return wrap
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        login = request.form.get('login')
+        password = request.form.get('password')
+        if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            return redirect(url_for('admin_panel'))
+        else:
+            return "Xato login yoki parol. Qayta urinib ko'ring."
+    
+    return """
+    <form method="post">
+        <input type="text" name="login" placeholder="Login" required>
+        <input type="password" name="password" placeholder="Parol" required>
+        <button type="submit">Kirish</button>
+    </form>
+    """
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('login'))
 
 @app.route('/api/receive-page/', methods=['POST'])
 def receive_page():
@@ -63,7 +101,7 @@ def api_data():
 
             if not text:
                 logging.warning("Matn bo'sh keldi, client_id: " + client_id)
-                return jsonify({"success": False, "message": "Matn kerak"}), 400
+                return jsonify({"success": False, "message": "Matn bo'sh"}), 400
 
             messages[client_id] = text
             logging.info(f"Matn saqlandi, client_id: {client_id}, matn: {text[:50]}...")
@@ -85,6 +123,7 @@ def api_data():
     })
 
 @app.route('/')
+@login_required
 def admin_panel():
     html = """
     <html>
@@ -95,7 +134,7 @@ def admin_panel():
             body { font-family: Arial, sans-serif; background: #f0f2f5; margin: 20px; color: #333; }
             h1 { color: #1a73e8; text-align: center; }
             .client { background: white; border-radius: 10px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-            iframe { width: 100%; height: 700px; border: 1px solid #ddd; border-radius: 8px; resize: both; overflow: auto; }  # Yangi: iframe resize mumkin
+            iframe { width: 100%; height: 400px; border: 1px solid #ddd; border-radius: 8px; resize: both; overflow: auto; }  # Kichikroq va moslashuvchan
             .form-group { margin-top: 15px; display: flex; align-items: center; }
             input[type=text] { flex: 1; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 5px; }
             button { padding: 12px 20px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 10px; }
@@ -106,6 +145,7 @@ def admin_panel():
     </head>
     <body>
         <h1>Cheat Monitoring Admin Panel</h1>
+        <a href="/logout" style="position: absolute; top: 10px; right: 10px; color: red;">Chiqish</a>
     """
 
     if not pages:
