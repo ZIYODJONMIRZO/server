@@ -7,17 +7,15 @@ import logging
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Secret key – environmentdan o'qiladi (Render.io da qo'shing!)
+# Secret key va login/parol environmentdan o'qiladi (xavfsiz)
 app.secret_key = os.getenv('SECRET_KEY') or 'fallback_secret_for_local'
-
-# Login/parol – environmentdan o'qiladi (xavfsiz)
 ADMIN_LOGIN = os.getenv('ADMIN_LOGIN') or "admin"
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD') or "1978"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-pages = {}    # client_id → sahifa ma'lumotlari
-messages = {} # client_id → matn (box ga chiqadigan)
+pages = {}
+messages = {}
 
 def login_required(f):
     def wrap(*args, **kwargs):
@@ -77,7 +75,6 @@ def receive_page():
         }
 
         logging.info(f"Sahifa qabul qilindi: {client_id} - {url}")
-
         return jsonify({"success": True, "data": {"id": client_id}}), 200
 
     except Exception as e:
@@ -111,7 +108,6 @@ def api_data():
             logging.error(f"Data POST xatosi: {str(e)}")
             return jsonify({"success": False, "message": str(e)}), 400
 
-    # GET – cheat kutayotgan format
     if client_id in messages:
         return jsonify({"success": True, "text": messages[client_id]})
 
@@ -131,9 +127,15 @@ def admin_panel():
         <style>
             body { font-family: Arial, sans-serif; background: #f0f2f5; margin: 20px; color: #333; }
             h1 { color: #1a73e8; text-align: center; }
-            .client { background: white; border-radius: 10px; padding: 15px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-            iframe { width: 100%; height: 350px; border: 1px solid #ddd; border-radius: 6px; resize: both; overflow: auto; }  /* Kichikroq va moslashuvchan */
-            .form-group { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
+            .client { background: white; border-radius: 10px; padding: 20px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+            .tab-buttons { margin-bottom: 15px; }
+            .tab-button { padding: 10px 20px; margin-right: 10px; background: #ddd; border: none; border-radius: 5px; cursor: pointer; }
+            .tab-button.active { background: #1a73e8; color: white; }
+            .tab-content { display: none; }
+            .tab-content.active { display: block; }
+            iframe { width: 100%; height: 350px; border: 1px solid #ddd; border-radius: 6px; resize: vertical; overflow: auto; }
+            pre { background: #f8f9fa; padding: 15px; border-radius: 6px; overflow: auto; font-size: 13px; white-space: pre-wrap; }
+            .form-group { margin-top: 15px; display: flex; align-items: center; gap: 10px; }
             input[type=text] { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #ddd; border-radius: 5px; }
             button { padding: 10px 18px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; }
             button:hover { background: #219a52; }
@@ -159,10 +161,26 @@ def admin_panel():
                 <p><strong>Sarlavha:</strong> {page['title']}</p>
                 <p class="timestamp"><strong>Vaqt:</strong> {page['timestamp']}</p>
                 <p><strong>Box matni:</strong> {current_msg}</p>
-                <div class="preview">
-                    <h3>Sahifa preview (kichik va moslashuvchan):</h3>
-                    <iframe srcdoc="{page['html'].replace('"', '&quot;').replace("'", '&#39;')}" title="Sahifa preview"></iframe>
+
+                <!-- Tab tugmalari -->
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="openTab(event, 'gui_{cid}')">Grafik ko'rinish</button>
+                    <button class="tab-button" onclick="openTab(event, 'html_{cid}')">HTML kod</button>
                 </div>
+
+                <!-- Grafik bo'lim -->
+                <div id="gui_{cid}" class="tab-content active">
+                    <h3>Grafik ko'rinish (to'liq sahifa):</h3>
+                    <iframe srcdoc="{page['html'].replace('"', '&quot;').replace("'", '&#39;')}" title="Grafik preview"></iframe>
+                </div>
+
+                <!-- HTML kod bo'lim -->
+                <div id="html_{cid}" class="tab-content">
+                    <h3>Toza HTML kod (faqat kod):</h3>
+                    <pre>{page['html'].replace('<', '&lt;').replace('>', '&gt;')}</pre>
+                </div>
+
+                <!-- Matn yuborish -->
                 <div class="form-group">
                     <input type="text" id="msg_{cid}" placeholder="Javob/matn yozing...">
                     <button onclick="sendMsg('{cid}')">Yuborish</button>
@@ -172,6 +190,20 @@ def admin_panel():
 
     html += """
     <script>
+    function openTab(evt, tabName) {
+        var i, tabcontent, tabbuttons;
+        tabcontent = document.getElementsByClassName("tab-content");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].className = tabcontent[i].className.replace(" active", "");
+        }
+        tabbuttons = document.getElementsByClassName("tab-button");
+        for (i = 0; i < tabbuttons.length; i++) {
+            tabbuttons[i].className = tabbuttons[i].className.replace(" active", "");
+        }
+        document.getElementById(tabName).className += " active";
+        evt.currentTarget.className += " active";
+    }
+
     function sendMsg(cid) {
         const text = document.getElementById('msg_' + cid).value.trim();
         if (!text) return alert("Matn kiriting!");
@@ -183,7 +215,7 @@ def admin_panel():
         })
         .then(r => r.json())
         .then(d => {
-            if (d.success) alert("Matn yuborildi! Cheat boxida 6-12 soniyada ko'rinadi.");
+            if (d.success) alert("Matn yuborildi! Cheat boxida tez orada ko'rinadi.");
             else alert("Xato: " + d.message);
         })
         .catch(e => alert("Yuborish xatosi: " + e));
@@ -195,4 +227,5 @@ def admin_panel():
     return html
 
 if __name__ == '__main__':
+    print("Server ishga tushdi: http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)
